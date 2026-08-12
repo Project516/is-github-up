@@ -15,6 +15,12 @@ set -uo pipefail
 
 API='https://www.githubstatus.com/api/v2/components.json'
 
+# The status API includes a pseudo-component named
+# "Visit www.githubstatus.com for more information" that is a promotional
+# footer, not a real service. This jq select expression filters it out wherever
+# components are enumerated, so it never shows in --list and cannot be waited on.
+JQ_NON_PROMO='select(.name | test("^Visit ") | not)'
+
 interval=120
 timeout=0
 once=0
@@ -79,7 +85,9 @@ fetch() { curl -fsS --max-time 20 "$API" 2>/dev/null; }
 
 if [ "${list:-0}" -eq 1 ]; then
   body=$(fetch) || { printf 'could not read %s\n' "$API" >&2; exit 3; }
-  printf '%s' "$body" | jq -r '.components[] | "\(.status)\t\(.name)"' | sort
+  printf '%s' "$body" \
+    | jq -r '.components[] | '"$JQ_NON_PROMO"' | "\(.status)\t\(.name)"' \
+    | sort
   exit 0
 fi
 
@@ -88,14 +96,14 @@ fi
 body=$(fetch) || { printf 'could not read %s\n' "$API" >&2; exit 3; }
 for name in "${components[@]}"; do
   printf '%s' "$body" \
-    | jq -e --arg n "$name" 'any(.components[]; .name == $n)' >/dev/null 2>&1 \
+    | jq -e --arg n "$name" 'any(.components[] | '"$JQ_NON_PROMO"'; .name == $n)' >/dev/null 2>&1 \
     || die "no such component: $name (try --list)"
 done
 
 # Prints "status<TAB>name" for each watched component, worst first.
 statuses() {
   printf '%s' "$1" | jq -r --args '
-    [.components[] | select(.name as $n | $ARGS.positional | index($n))]
+    [.components[] | '"$JQ_NON_PROMO"' | select(.name as $n | $ARGS.positional | index($n))]
     | sort_by(.status == "operational")
     | .[] | "\(.status)\t\(.name)"
   ' "${components[@]}"
@@ -103,7 +111,7 @@ statuses() {
 
 all_green() {
   printf '%s' "$1" | jq -e --args '
-    [.components[] | select(.name as $n | $ARGS.positional | index($n))]
+    [.components[] | '"$JQ_NON_PROMO"' | select(.name as $n | $ARGS.positional | index($n))]
     | length > 0 and all(.[]; .status == "operational")
   ' "${components[@]}" >/dev/null 2>&1
 }
