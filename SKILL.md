@@ -1,13 +1,12 @@
 ---
-name: is-actions-online
-description: Check or wait for GitHub Actions to come back from an outage, using the public githubstatus.com API with no token and no API quota. Use when CI checks fail in job setup with "Failed to resolve action download info", "The job was not acquired by Runner", or "Service Unavailable"; when runs queue and never start; when pushes stop triggering workflow runs; or before rerunning a red check, so a platform outage is not mistaken for a repo problem.
+name: is-github-up
+description: Check or wait for GitHub services to come back from an outage, using the public githubstatus.com API with no token and no API quota. Use when CI checks fail with "Service Unavailable", "Failed to resolve action download info", or "The job was not acquired by Runner"; when the API returns 503; when pushes stop triggering workflow runs; or before rerunning a red check, so a platform outage is not mistaken for a repo problem.
 ---
 
-# Is Actions online
+# Is GitHub up
 
 ## When a red check is not your fault
-
-GitHub Actions outages do not announce themselves. They surface as failures that
+GitHub outages do not announce themselves. They surface as failures that
 read like repository bugs, and no code change fixes any of them:
 
 - `Failed to resolve action download info. Error: Service Unavailable`
@@ -18,6 +17,9 @@ read like repository bugs, and no code change fixes any of them:
   15 minutes, and the same thing happens on unrelated branches.
 - Pushes and pull requests stop launching runs at all. GitHub throttles webhook
   delivery during an incident, so a missing run is itself a symptom.
+- API requests return 503 or "No server is currently available to service your
+  request." This affects `gh`, `curl` to api.github.com, and any tool that
+  talks to the GitHub API.
 
 Two tells separate an outage from a repository problem. An outage hits **every**
 workflow, including ones your change did not touch and scheduled runs on the
@@ -28,18 +30,17 @@ Rerunning a red check during an outage costs minutes and proves nothing. Confirm
 the platform first.
 
 ## Ask
-
 ```bash
-scripts/is-actions-online.sh --once          # exit 0 operational, 2 degraded
-scripts/is-actions-online.sh --list          # every component and its status
+scripts/github-status.sh --once          # exit 0 operational, 2 degraded
+scripts/github-status.sh --list          # every component and its status
+scripts/github-status.sh --json --once   # JSON output for scripts
 ```
 
 ## Wait
-
-Blocks until Actions reports operational, then exits 0:
+Blocks until all watched components report operational, then exits 0:
 
 ```bash
-scripts/is-actions-online.sh --interval 300
+scripts/github-status.sh --interval 300
 ```
 
 Run it detached rather than polling in a loop yourself. An agent that backgrounds
@@ -50,8 +51,8 @@ whole point of the script. A plain shell can background it the usual way and
 Other components, and a bounded wait:
 
 ```bash
-scripts/is-actions-online.sh Actions Pages   # both must be green
-scripts/is-actions-online.sh -t 3600         # give up after an hour
+scripts/github-status.sh Actions Pages   # both must be green
+scripts/github-status.sh -t 3600         # give up after an hour
 ```
 
 Names are matched as GitHub spells them (`Actions`, `Pages`, `API Requests`,
@@ -64,7 +65,6 @@ Exit codes: `0` operational, `2` timed out or still degraded under `--once`,
 `3` the status API could not be read five times in a row, `64` bad usage.
 
 ## While you wait
-
 An outage blocks merging, not working.
 
 - **Reviews still happen.** Review bots generally run outside Actions and keep
@@ -80,7 +80,6 @@ genuinely finished. A queued auto-merge lands the moment checks pass, which can
 be before a review you were waiting on arrives.
 
 ## Requirements
-
 `curl` and `jq`. No GitHub token, no `gh` login, no authentication of any kind:
 `https://www.githubstatus.com/api/v2/components.json` is public. Nothing is
 written to disk. The minimum poll interval is clamped to 15 seconds because the
